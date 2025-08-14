@@ -81,6 +81,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+// Registra o serviço de token JWT (implementação concreta)
+builder.Services.AddScoped<BankMore.ContaCorrente.Application.Auth.ITokenService, BankMore.ContaCorrente.Api.Services.JwtTokenService>();
+
 // 4) MediatR (v12+) registrando os handlers do assembly Application
 builder.Services.AddMediatR(cfgM =>
     cfgM.RegisterServicesFromAssemblies(typeof(AssemblyMarker).Assembly));
