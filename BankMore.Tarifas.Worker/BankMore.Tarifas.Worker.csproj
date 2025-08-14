@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-BankMore.Tarifas.Worker-fe0fdced-d575-438b-937f-f79103e1eabd</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KafkaFlow" Version="4.0.1" />
+    <PackageReference Include="MediatR" Version="13.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BankMore.Tarifas.Application\BankMore.Tarifas.Application.csproj" />
+    <ProjectReference Include="..\BankMore.Tarifas.Infrastructure\BankMore.Tarifas.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
