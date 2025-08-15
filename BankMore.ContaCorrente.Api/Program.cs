@@ -9,6 +9,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
+using BankMore.ContaCorrente.Application.Auth;    // IPasswordHasher
+using BankMore.ContaCorrente.Application.Contas;  // IContaRepository
+using BankMore.ContaCorrente.Infrastructure.Repositories; // ContaRepository
+using BankMore.ContaCorrente.Infrastructure.Security;     // Pbkdf2PasswordHasher
 
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
@@ -83,7 +87,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Registra o serviço de token JWT (implementação concreta)
-builder.Services.AddScoped<BankMore.ContaCorrente.Application.Auth.ITokenService, BankMore.ContaCorrente.Api.Services.JwtTokenService>();
+builder.Services.AddScoped<ITokenService, BankMore.ContaCorrente.Api.Services.JwtTokenService>();
 
 // 4) MediatR (v12+) registrando os handlers do assembly Application
 builder.Services.AddMediatR(cfgM =>
@@ -98,6 +102,10 @@ builder.Services.AddScoped<IDbConnection>(_ =>
     conn.Open();
     return conn;
 });
+
+// 6) Ports & Adapters (DDD) — expõe implementações concretas para as interfaces da Application
+builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>(); // hashing PBKDF2 (salt por senha)
+builder.Services.AddScoped<IContaRepository, ContaRepository>();     // Dapper/SQLite para contas
 
 var app = builder.Build();
 

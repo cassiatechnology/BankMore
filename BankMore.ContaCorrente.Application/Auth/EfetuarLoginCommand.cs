@@ -1,34 +1,57 @@
 ﻿using MediatR;
+using BankMore.ContaCorrente.Application.Contas; // IContaRepository
+using BankMore.ContaCorrente.Application.Auth;   // IPasswordHasher, ITokenService
 
 namespace BankMore.ContaCorrente.Application.Auth;
 
-// Command de login: recebe CPF ou Número da Conta + Senha.
-// Retorna o JWT. Aqui é stub: aceite qualquer combinação "demo"/"123".
+/// <summary>
+/// Command de login: recebe CPF ou número e a senha. Retorna o JWT.
+/// </summary>
 public sealed record EfetuarLoginCommand(string CpfOuConta, string Senha) : IRequest<string>;
 
 public sealed class EfetuarLoginHandler : IRequestHandler<EfetuarLoginCommand, string>
 {
+    private readonly IContaRepository _repo;
+    private readonly IPasswordHasher _hasher;
     private readonly ITokenService _tokenService;
 
-    public EfetuarLoginHandler(ITokenService tokenService)
+    public EfetuarLoginHandler(
+        IContaRepository repo,
+        IPasswordHasher hasher,
+        ITokenService tokenService)
     {
+        _repo = repo;
+        _hasher = hasher;
         _tokenService = tokenService;
     }
 
-    public Task<string> Handle(EfetuarLoginCommand request, CancellationToken ct)
+    public async Task<string> Handle(EfetuarLoginCommand request, CancellationToken ct)
     {
-        // Stub de autenticação: aceita "cpfOuConta=demo" e "senha=123".
-        // Depois implementaremos validação real (Dapper + hash/salt).
-        if (request.CpfOuConta == "demo" && request.Senha == "123")
-        {
-            var jwt = _tokenService.GenerateToken(accountId: "1"); // "1" = id fictício
-            return Task.FromResult(jwt);
-        }
+        // Validando entrada básica
+        if (string.IsNullOrWhiteSpace(request.CpfOuConta))
+            throw new LoginException("Documento ou número não informado.");
+        if (string.IsNullOrWhiteSpace(request.Senha))
+            throw new LoginException("Senha não informada.");
 
-        throw new LoginException("Credenciais inválidas");
+        // Buscando conta por CPF (11 dígitos) ou número
+        var conta = await _repo.GetByCpfOrNumeroAsync(request.CpfOuConta, ct);
+        if (conta is null)
+            throw new LoginException("Credenciais inválidas.");
+
+        // Verificando senha com PBKDF2
+        var ok = _hasher.Verify(request.Senha, conta.Salt, conta.SenhaHash);
+        if (!ok)
+            throw new LoginException("Credenciais inválidas.");
+
+        // Gerando JWT com sub = id da conta
+        var jwt = _tokenService.GenerateToken(conta.IdConta);
+        return jwt;
     }
 }
 
+/// <summary>
+/// Exceção de login. O Controller traduz para HTTP 401 com type USER_UNAUTHORIZED.
+/// </summary>
 public sealed class LoginException : Exception
 {
     public LoginException(string message) : base(message) { }
