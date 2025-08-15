@@ -65,19 +65,49 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
             EntityId = entity.IdTransferencia,
             entity.DataMovimento
         });
-        var resultadoJson = JsonSerializer.Serialize(new { status = "NO_CONTENT" });
+        // Resultado de sucesso (204)
+        var okJson = JsonSerializer.Serialize(new { status = "NO_CONTENT" });
 
-        // Iniciando idempotência (begin)
+        // Iniciando idempotência
         var first = await _repo.TryBeginIdempotentAsync(request.IdempotencyKey, requisicaoJson, ct);
+
+        // Replay: ler o resultado persistido (sucesso ou erro) e repetir o mesmo efeito
         if (!first)
         {
-            // Replay idempotente
-            var _ = await _repo.GetResultadoByIdempotencyKeyAsync(request.IdempotencyKey, ct);
-            return Unit.Value;
+            var stored = await _repo.GetResultadoByIdempotencyKeyAsync(request.IdempotencyKey, ct);
+            if (string.IsNullOrWhiteSpace(stored))
+            {
+                // Sem resultado final → tratar como falha anterior
+                throw new TransferenciaException("Falha anterior na transferência.", ErrorCodes.TRANSFER_FAILED);
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(stored);
+                var root = doc.RootElement;
+                var okStatus = root.TryGetProperty("status", out var s) ? s.GetString() : null;
+
+                if (string.Equals(okStatus, "NO_CONTENT", StringComparison.OrdinalIgnoreCase))
+                    return Unit.Value; // repetindo 204
+
+                if (string.Equals(okStatus, "ERROR", StringComparison.OrdinalIgnoreCase))
+                {
+                    var message = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "Falha na transferência.") : "Falha na transferência.";
+                    var type = root.TryGetProperty("type", out var t) ? (t.GetString() ?? ErrorCodes.TRANSFER_FAILED) : ErrorCodes.TRANSFER_FAILED;
+                    throw new TransferenciaException(message, type); // repetindo erro
+                }
+
+                // Status desconhecido → repetir falha
+                throw new TransferenciaException("Falha anterior na transferência.", ErrorCodes.TRANSFER_FAILED);
+            }
+            catch (JsonException)
+            {
+                // JSON inesperado → repetir falha
+                throw new TransferenciaException("Falha anterior na transferência.", ErrorCodes.TRANSFER_FAILED);
+            }
         }
 
-        // Orquestração:
-        // 1) Debitando origem
+        // Débito origem
         try
         {
             await _cc.DebitarAsync(
@@ -88,14 +118,21 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
         }
         catch (ContaCorrenteClientException ex)
         {
-            // Mapeando erro de débito para a resposta do caso de uso
-            // Retornando tipo do erro original quando disponível
+            // Persistindo resultado de erro e repetindo em replays
+            var errJson = JsonSerializer.Serialize(new
+            {
+                status = "ERROR",
+                message = ex.Message,
+                type = string.IsNullOrWhiteSpace(ex.ErrorType) ? ErrorCodes.TRANSFER_FAILED : ex.ErrorType,
+                http = ex.StatusCode
+            });
+            await _repo.SetErrorResultAsync(request.IdempotencyKey, errJson, ct);
+
             throw new TransferenciaException(ex.Message,
                 string.IsNullOrWhiteSpace(ex.ErrorType) ? ErrorCodes.TRANSFER_FAILED : ex.ErrorType);
         }
 
-        // 2) Creditando destino
-        var creditoOk = false;
+        // Crédito destino
         try
         {
             await _cc.CreditarAsync(
@@ -104,12 +141,10 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
                 numeroContaDestino: numeroDestino,
                 valor: request.Valor,
                 ct: ct);
-
-            creditoOk = true;
         }
         catch (ContaCorrenteClientException ex)
         {
-            // 3) Compensação: estornando crédito na origem (creditando de volta)
+            // Compensando: crédito na origem
             try
             {
                 await _cc.EstornarCreditoOrigemAsync(
@@ -120,31 +155,31 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
             }
             catch
             {
-                // Mantendo silêncio aqui para não mascarar a causa principal
+                // Ignorando falha do estorno para não mascarar a causa raiz
             }
+
+            // Persistindo resultado de erro e repetindo em replays
+            var errJson = JsonSerializer.Serialize(new
+            {
+                status = "ERROR",
+                message = ex.Message,
+                type = string.IsNullOrWhiteSpace(ex.ErrorType) ? ErrorCodes.TRANSFER_FAILED : ex.ErrorType,
+                http = ex.StatusCode
+            });
+            await _repo.SetErrorResultAsync(request.IdempotencyKey, errJson, ct);
 
             throw new TransferenciaException(ex.Message,
                 string.IsNullOrWhiteSpace(ex.ErrorType) ? ErrorCodes.TRANSFER_FAILED : ex.ErrorType);
         }
 
-        // 4) Concluindo idempotência e gravando a transferência (após sucesso das operações)
-        if (creditoOk)
-        {
-            await _repo.CompleteAsync(entity, request.IdempotencyKey, resultadoJson, ct);
-        }
-
-        // Concluindo com sucesso
+        // Sucesso: completando idempotência e gravando transferência
+        await _repo.CompleteAsync(entity, request.IdempotencyKey, okJson, ct);
         return Unit.Value;
     }
 }
 
-/// <summary>
-/// Exceção do caso de uso de transferência.
-/// </summary>
 public sealed class TransferenciaException : Exception
 {
     public string ErrorType { get; }
-
-    public TransferenciaException(string message, string errorType) : base(message)
-        => ErrorType = errorType;
+    public TransferenciaException(string message, string errorType) : base(message) => ErrorType = errorType;
 }

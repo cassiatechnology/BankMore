@@ -43,4 +43,17 @@ public interface ITransferenciaRepository
         string requisicaoJson,
         string resultadoJson,
         CancellationToken ct);
+
+    /// <summary>
+    /// Permite que a idempotência persista também o resultado de erro e, 
+    /// no replay, repita o mesmo erro.
+    /// </summary>
+    /// <param name="idempotencyKey"></param>
+    /// <param name="resultadoJson"></param>
+    /// <param name="ct"></param>
+    /// <returns></returns>
+    Task SetErrorResultAsync(
+        string idempotencyKey,
+        string resultadoJson,
+        CancellationToken ct);
 }

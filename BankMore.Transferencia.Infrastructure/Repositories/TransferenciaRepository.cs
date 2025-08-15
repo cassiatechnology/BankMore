@@ -160,6 +160,20 @@ VALUES
         return true;
     }
 
+    public async Task SetErrorResultAsync(string idempotencyKey, string resultadoJson, CancellationToken ct)
+    {
+        EnsureOpen();
+
+        // Atualizando o resultado do registro iniciado por TryBeginIdempotentAsync
+        const string sql = @"
+UPDATE idempotencia
+   SET resultado = @Res
+ WHERE chave_idempotencia = @Key;";
+
+        await _conn.ExecuteAsync(
+            new CommandDefinition(sql, new { Key = idempotencyKey, Res = resultadoJson }, cancellationToken: ct));
+    }
+
     private void EnsureOpen()
     {
         if (_conn.State != ConnectionState.Open)
