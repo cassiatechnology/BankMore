@@ -11,14 +11,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.ContaCorrente.Doma
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.ContaCorrente.Infrastructure", "BankMore.ContaCorrente.Infrastructure\BankMore.ContaCorrente.Infrastructure.csproj", "{821A19B9-E5CD-4A98-8C88-B023B5D21081}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.Tarifas.Application", "BankMore.Tarifas.Application\BankMore.Tarifas.Application.csproj", "{258111E5-E156-4933-958C-B609CFBCD754}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.Tarifas.Domain", "BankMore.Tarifas.Domain\BankMore.Tarifas.Domain.csproj", "{C2F23221-DAAE-4A06-9380-BDB9BC5FF5DC}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.Tarifas.Infrastructure", "BankMore.Tarifas.Infrastructure\BankMore.Tarifas.Infrastructure.csproj", "{4642DCA1-0361-4E58-A68E-B89554EFB991}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.Tarifas.Worker", "BankMore.Tarifas.Worker\BankMore.Tarifas.Worker.csproj", "{362203D3-7353-4458-8D7C-A8CC1000A050}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.Transferencia.Api", "BankMore.Transferencia.Api\BankMore.Transferencia.Api.csproj", "{26CA7BE4-E2EA-4F7A-ADA3-EB65EBBF4A51}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankMore.Transferencia.Application", "BankMore.Transferencia.Application\BankMore.Transferencia.Application.csproj", "{B2282173-F935-43FB-82C7-DC4B9DF4283D}"
@@ -49,22 +41,6 @@ Global
 		{821A19B9-E5CD-4A98-8C88-B023B5D21081}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{821A19B9-E5CD-4A98-8C88-B023B5D21081}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{821A19B9-E5CD-4A98-8C88-B023B5D21081}.Release|Any CPU.Build.0 = Release|Any CPU
-		{258111E5-E156-4933-958C-B609CFBCD754}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{258111E5-E156-4933-958C-B609CFBCD754}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{258111E5-E156-4933-958C-B609CFBCD754}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{258111E5-E156-4933-958C-B609CFBCD754}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C2F23221-DAAE-4A06-9380-BDB9BC5FF5DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C2F23221-DAAE-4A06-9380-BDB9BC5FF5DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C2F23221-DAAE-4A06-9380-BDB9BC5FF5DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C2F23221-DAAE-4A06-9380-BDB9BC5FF5DC}.Release|Any CPU.Build.0 = Release|Any CPU
-		{4642DCA1-0361-4E58-A68E-B89554EFB991}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4642DCA1-0361-4E58-A68E-B89554EFB991}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{4642DCA1-0361-4E58-A68E-B89554EFB991}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{4642DCA1-0361-4E58-A68E-B89554EFB991}.Release|Any CPU.Build.0 = Release|Any CPU
-		{362203D3-7353-4458-8D7C-A8CC1000A050}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{362203D3-7353-4458-8D7C-A8CC1000A050}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{362203D3-7353-4458-8D7C-A8CC1000A050}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{362203D3-7353-4458-8D7C-A8CC1000A050}.Release|Any CPU.Build.0 = Release|Any CPU
 		{26CA7BE4-E2EA-4F7A-ADA3-EB65EBBF4A51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{26CA7BE4-E2EA-4F7A-ADA3-EB65EBBF4A51}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{26CA7BE4-E2EA-4F7A-ADA3-EB65EBBF4A51}.Release|Any CPU.ActiveCfg = Release|Any CPU
