@@ -1,14 +1,19 @@
-﻿using System.Text.Json;
-using MediatR;
-using BankMore.Transferencia.Application.Common;          // ErrorCodes
+﻿using BankMore.Transferencia.Application.Common;          // ErrorCodes
 using BankMore.Transferencia.Application.ContaCorrente;   // IContaCorrenteClient, ContaCorrenteClientException
+using MediatR;
+using System.Text.Json;
 using Entity = BankMore.Transferencia.Domain.Entities;
 
 namespace BankMore.Transferencia.Application.Transferencias;
 
 /// <summary>
-/// Command de transferência: recebe origem (JWT), conta destino (número), valor e chave idempotente.
+/// Command de transferência.
 /// </summary>
+/// <param name="ContaOrigemId"></param>
+/// <param name="NumeroContaDestino"></param>
+/// <param name="Valor"></param>
+/// <param name="IdempotencyKey"></param>
+/// <param name="AccessToken"></param>
 public sealed record EfetuarTransferenciaCommand(
     string ContaOrigemId,        // id da conta do JWT
     string NumeroContaDestino,   // número da conta de destino

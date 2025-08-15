@@ -1,7 +1,4 @@
-﻿// Camada: Application — porta para chamar a ContaCorrente.Api via HTTP.
-// Encaminhando o JWT (sem "Bearer ") em cada chamada.
-
-namespace BankMore.Transferencia.Application.ContaCorrente;
+﻿namespace BankMore.Transferencia.Application.ContaCorrente;
 
 public interface IContaCorrenteClient
 {

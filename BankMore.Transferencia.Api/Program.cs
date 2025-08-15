@@ -1,9 +1,10 @@
 ﻿using BankMore.Transferencia.Application;
+using BankMore.Transferencia.Application.ContaCorrente;   // IContaCorrenteClient
 using BankMore.Transferencia.Application.Transferencias;
+using BankMore.Transferencia.Infrastructure.Clients;      // ContaCorrenteClient
 using BankMore.Transferencia.Infrastructure.Db;
 using BankMore.Transferencia.Infrastructure.Repositories;
 using Dapper;
-using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
@@ -11,8 +12,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
 using System.Data;
 using System.Text;
-using BankMore.Transferencia.Application.ContaCorrente;   // IContaCorrenteClient
-using BankMore.Transferencia.Infrastructure.Clients;      // ContaCorrenteClient
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,6 +43,22 @@ builder.Services.AddSwaggerGen(opt =>
     {
         { new() { Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } }, Array.Empty<string>() }
     });
+
+    // Lendo os XMLs de comentários (Api + Application + Domain)
+    var basePath = AppContext.BaseDirectory;
+    var xmls = new[]
+    {
+        "BankMore.Transferencia.Api.xml",
+        "BankMore.Transferencia.Application.xml",
+        "BankMore.Transferencia.Domain.xml"
+    };
+
+    foreach (var file in xmls)
+    {
+        var path = Path.Combine(basePath, file);
+        if (File.Exists(path))
+            opt.IncludeXmlComments(path, includeControllerXmlComments: true);
+    }
 });
 
 // JWT (forçando 403 quando inválido/expirado)
@@ -85,7 +100,7 @@ builder.Services.AddScoped<IDbConnection>(_ =>
 });
 
 // DDD Ports & Adapters: a Application depende da interface; a Infrastructure fornece a implementação.
-// Aqui conectamos as duas via DI.
+// Aqui conectamos as duas via Dependency Injection.
 builder.Services.AddScoped<ITransferenciaRepository, TransferenciaRepository>();
 
 // Camada Application: porta para chamar a ContaCorrente.Api via HTTP
@@ -122,7 +137,6 @@ app.UseSwaggerUI();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapGet("/health", () => Results.Ok(new { ok = true, service = "transferencia" })).AllowAnonymous();
 app.Run();
 
 public sealed class DapperSqliteDecimalHandler : SqlMapper.TypeHandler<decimal>

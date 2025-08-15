@@ -3,9 +3,6 @@ using BankMore.ContaCorrente.Application.Movimentacao;  // MovimentarContaComman
 using BankMore.ContaCorrente.Domain.Entities;           // (criado pelo handler)
 using FluentAssertions;
 using NSubstitute;
-using System.Threading;
-using System.Threading.Tasks;
-using Xunit;
 
 public class MovimentarContaHandlerTests
 {

@@ -1,11 +1,7 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
+﻿using BankMore.ContaCorrente.Application.Auth;      // EfetuarLoginCommand/Handler/LoginException, IPasswordHasher, ITokenService
+using BankMore.ContaCorrente.Application.Contas;    // IContaRepository, ContaReadModel
 using FluentAssertions;
 using NSubstitute;
-using Xunit;
-
-using BankMore.ContaCorrente.Application.Auth;      // EfetuarLoginCommand/Handler/LoginException, IPasswordHasher, ITokenService
-using BankMore.ContaCorrente.Application.Contas;    // IContaRepository, ContaReadModel
 
 public class EfetuarLoginHandlerTests
 {

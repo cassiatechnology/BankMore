@@ -1,10 +1,4 @@
-﻿// Camada: Domain (DDD) — entidade mínima da Transferência.
-// Objetivo: representar o conceito de transferência sem depender de detalhes de infra (Dapper/SQLite).
-// Observações importantes para o desafio:
-// - Mantemos DataMovimento como string no formato "DD/MM/YYYY" para alinhar ao script SQL enviado.
-// - O valor é decimal (modelo de domínio); no SQLite o script usa REAL (ponto flutuante). A conversão será tratada na Infra.
-
-namespace BankMore.Transferencia.Domain.Entities;
+﻿namespace BankMore.Transferencia.Domain.Entities;
 
 public sealed record Transferencia(
     string IdTransferencia,        // TEXT(37) no SQLite — aqui usamos GUID em string

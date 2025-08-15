@@ -1,9 +1,4 @@
-﻿// Camada: Application — porta de persistência da Transferência.
-// Adicionando operações para iniciar idempotência e concluir após orquestração.
-
-using System.Threading;
-using System.Threading.Tasks;
-using Entity = BankMore.Transferencia.Domain.Entities;
+﻿using Entity = BankMore.Transferencia.Domain.Entities;
 
 namespace BankMore.Transferencia.Application.Transferencias;
 

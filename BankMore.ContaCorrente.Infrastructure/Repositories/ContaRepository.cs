@@ -10,10 +10,10 @@
 //   existe um passo de "ativação"; portanto, ativamos na criação para permitir uso imediato.
 // - Número de conta: estratégia simples "MAX(numero)+1". Em produção (Oracle), usaríamos SEQUENCE.
 
-using System.Data;
+using BankMore.ContaCorrente.Application.Contas;
 using Dapper;
 using Microsoft.Data.Sqlite;
-using BankMore.ContaCorrente.Application.Contas;
+using System.Data;
 
 namespace BankMore.ContaCorrente.Infrastructure.Repositories;
 

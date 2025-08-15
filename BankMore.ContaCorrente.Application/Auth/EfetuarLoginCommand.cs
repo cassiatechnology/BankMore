@@ -1,6 +1,5 @@
-﻿using MediatR;
-using BankMore.ContaCorrente.Application.Contas; // IContaRepository
-using BankMore.ContaCorrente.Application.Auth;   // IPasswordHasher, ITokenService
+﻿using BankMore.ContaCorrente.Application.Contas; // IContaRepository
+using MediatR;
 
 namespace BankMore.ContaCorrente.Application.Auth;
 

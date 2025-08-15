@@ -1,14 +1,14 @@
-﻿using System.Security.Claims;
-using BankMore.ContaCorrente.Application.Auth;
+﻿using BankMore.ContaCorrente.Application.Auth;
 using BankMore.ContaCorrente.Application.Cadastro;
 using BankMore.ContaCorrente.Application.Common;
+using BankMore.ContaCorrente.Application.Contas;   // InativarContaCommand, InativacaoException
 using BankMore.ContaCorrente.Application.Movimentacao;
 using BankMore.ContaCorrente.Application.Saldo;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
-using BankMore.ContaCorrente.Application.Contas;   // InativarContaCommand, InativacaoException
+using System.Security.Claims;
 
 namespace BankMore.ContaCorrente.Api.Controllers;
 
@@ -23,8 +23,27 @@ public class ContaCorrenteController : ControllerBase
     public ContaCorrenteController(IMediator mediator) => _mediator = mediator;
 
     // -------- CADASTRO --------
+    /// <summary>Dados para cadastro de conta.</summary>
+    /// <remarks>Recebendo CPF e senha.</remarks>
     public sealed record CadastrarContaRequest(string Cpf, string Senha);
 
+    /// <summary>Cadastrando conta corrente.</summary>
+    /// <remarks>
+    /// Recebendo CPF e senha, validando o documento e retornando o número da conta.
+    /// 
+    /// <b>Exemplo de request</b>
+    /// { "cpf": "529.982.247-25", "senha": "123456" }
+    ///
+    /// <b>200 OK</b>
+    /// { "numeroConta": 100000 }
+    ///
+    /// <b>400 BadRequest</b>
+    /// { "message": "CPF inválido.", "type": "INVALID_DOCUMENT" }
+    /// </remarks>
+    /// <param name="req">CPF e senha.</param>
+    /// <param name="ct">Token de cancelamento.</param>
+    /// <response code="200">Retornando o número da conta.</response>
+    /// <response code="400">CPF inválido (<c>INVALID_DOCUMENT</c>).</response>
     [AllowAnonymous] // Cadastro não exige token
     [HttpPost("cadastro")]
     [SwaggerOperation(Summary = "Cadastrar conta corrente", Description = "Recebe CPF e senha; retorna número da conta")]
@@ -44,8 +63,30 @@ public class ContaCorrenteController : ControllerBase
     }
 
     // -------- LOGIN --------
+    /// <summary>Dados para login.</summary>
+    /// <remarks>Recebendo CPF <i>ou</i> Número da Conta e a senha.</remarks>
     public sealed record LoginRequest(string CpfOuConta, string Senha);
 
+    /// <summary>Efetuando login.</summary>
+    /// <remarks>
+    /// Recebendo número da conta <i>ou</i> CPF e a senha. Retornando um token JWT.
+    /// 
+    /// <b>Exemplo (por CPF)</b>
+    /// { "cpfOuConta": "52998224725", "senha": "123456" }
+    ///
+    /// <b>Exemplo (por número)</b>
+    /// { "cpfOuConta": "100000", "senha": "123456" }
+    ///
+    /// <b>200 OK</b>
+    /// { "token": "eyJhbGciOi..." }
+    ///
+    /// <b>401 Unauthorized</b>
+    /// { "message": "Credenciais inválidas.", "type": "USER_UNAUTHORIZED" }
+    /// </remarks>
+    /// <param name="req">Documento ou número + senha.</param>
+    /// <param name="ct">Token de cancelamento.</param>
+    /// <response code="200">Retornando o token JWT.</response>
+    /// <response code="401">Credenciais inválidas (<c>USER_UNAUTHORIZED</c>).</response>
     [AllowAnonymous] // Login não exige token
     [HttpPost("login")]
     [SwaggerOperation(Summary = "Efetuar login", Description = "Recebe CPF ou Número da Conta e a senha; retorna um JWT")]
@@ -66,8 +107,34 @@ public class ContaCorrenteController : ControllerBase
     }
 
     // -------- INATIVAR CONTA --------
+    /// <summary>Dados para inativação.</summary>
+    /// <remarks>Recebendo a senha do titular para confirmar a operação.</remarks>
     public sealed record InativarRequest(string Senha);
 
+    /// <summary>Inativando a conta corrente.</summary>
+    /// <remarks>
+    /// Validando a senha do titular e marcando <c>ativo = 0</c>.
+    /// 
+    /// <b>Exemplo de request</b>
+    /// { "senha": "123456" }
+    ///
+    /// <b>204 No Content</b> — operação concluída
+    ///
+    /// <b>401 Unauthorized</b>
+    /// { "message": "Senha incorreta.", "type": "USER_UNAUTHORIZED" }
+    ///
+    /// <b>400 BadRequest</b>
+    /// { "message": "Conta não encontrada.", "type": "INVALID_ACCOUNT" }
+    ///
+    /// <b>403 Forbidden</b>
+    /// { "message": "Token inválido.", "type": "INVALID_ACCOUNT" }
+    /// </remarks>
+    /// <param name="req">Senha do titular.</param>
+    /// <param name="ct">Token de cancelamento.</param>
+    /// <response code="204">Conta inativada.</response>
+    /// <response code="400">Conta inexistente/ inválida (<c>INVALID_ACCOUNT</c>).</response>
+    /// <response code="401">Senha incorreta (<c>USER_UNAUTHORIZED</c>).</response>
+    /// <response code="403">Token inválido/expirado.</response>
     [HttpPost("inativar")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
@@ -102,6 +169,15 @@ public class ContaCorrenteController : ControllerBase
 
 
     // -------- MOVIMENTAÇÃO --------
+    /// <summary>Dados para movimentação (crédito/débito).</summary>
+    /// <remarks>
+    /// Usando a conta do token quando <c>NumeroConta</c> não é informado.
+    /// Regras:
+    /// - Aceitando <c>Tipo</c>: 'C' (Crédito) ou 'D' (Débito).
+    /// - Apenas valores positivos.
+    /// - Quando <c>NumeroConta</c> é diferente da conta do token, aceitando apenas 'C'.
+    /// - Idempotência via <c>IdempotencyKey</c>.
+    /// </remarks>
     public sealed record MovimentarRequest(
     string IdempotencyKey,
     char Tipo,           // 'C' ou 'D'
@@ -109,6 +185,32 @@ public class ContaCorrenteController : ControllerBase
     int? NumeroConta     // opcional; se null, usar a conta do token
     );
 
+    /// <summary>Movimentando conta (crédito/débito).</summary>
+    /// <remarks>
+    /// Usando a conta do token quando <c>NumeroConta</c> é omitido.  
+    /// Idempotência por <c>IdempotencyKey</c>.
+    ///
+    /// <b>Exemplo (crédito na própria conta)</b>
+    /// { "idempotencyKey": "mov-001", "tipo": "C", "valor": 100.00 }
+    ///
+    /// <b>Exemplo (crédito em outra conta)</b>
+    /// { "idempotencyKey": "mov-002", "tipo": "C", "valor": 50.00, "numeroConta": 100001 }
+    ///
+    /// <b>204 No Content</b> — operação concluída
+    ///
+    /// <b>400 BadRequest</b>
+    /// { "message": "Valor deve ser positivo.", "type": "INVALID_VALUE" }
+    ///
+    /// <b>403 Forbidden</b>
+    /// { "message": "Token inválido.", "type": "INVALID_ACCOUNT" }
+    /// </remarks>
+    /// <param name="req">Dados da movimentação.</param>
+    /// <param name="ct">Token de cancelamento.</param>
+    /// <response code="204">Movimentação concluída.</response>
+    /// <response code="400">
+    /// Erros de regra: <c>INVALID_ACCOUNT</c>, <c>INACTIVE_ACCOUNT</c>, <c>INVALID_VALUE</c>, <c>INVALID_TYPE</c>.
+    /// </response>
+    /// <response code="403">Token inválido/expirado.</response>
     [HttpPost("movimentacoes")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
@@ -145,6 +247,28 @@ public class ContaCorrenteController : ControllerBase
 
 
     // -------- SALDO --------
+    /// <summary>Consultando saldo.</summary>
+    /// <remarks>
+    /// Calculando saldo = soma(C) − soma(D).
+    ///
+    /// <b>200 OK</b>
+    /// {
+    ///   "numeroConta": 100000,
+    ///   "nomeTitular": "Titular",
+    ///   "dataHora": "2025-08-15T12:30:10-03:00",
+    ///   "valor": 123.45
+    /// }
+    ///
+    /// <b>400 BadRequest</b>
+    /// { "message": "Conta inativa.", "type": "INACTIVE_ACCOUNT" }
+    ///
+    /// <b>403 Forbidden</b>
+    /// { "message": "Token inválido.", "type": "INVALID_ACCOUNT" }
+    /// </remarks>
+    /// <param name="ct">Token de cancelamento.</param>
+    /// <response code="200">Retornando número, titular, data/hora e valor do saldo.</response>
+    /// <response code="400"><c>INVALID_ACCOUNT</c> ou <c>INACTIVE_ACCOUNT</c>.</response>
+    /// <response code="403">Token inválido/expirado.</response>
     [HttpGet("saldo")]
     [ProducesResponseType(typeof(SaldoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]

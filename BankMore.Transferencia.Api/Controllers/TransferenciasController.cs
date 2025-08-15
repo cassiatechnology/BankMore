@@ -1,10 +1,10 @@
-﻿using System.Security.Claims;
+﻿using BankMore.Transferencia.Application.Common;            // ErrorCodes
+using BankMore.Transferencia.Application.ContaCorrente;    // ContaCorrenteClientException
+using BankMore.Transferencia.Application.Transferencias;   // EfetuarTransferenciaCommand, TransferenciaException
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using BankMore.Transferencia.Application.Common;            // ErrorCodes
-using BankMore.Transferencia.Application.Transferencias;   // EfetuarTransferenciaCommand, TransferenciaException
-using BankMore.Transferencia.Application.ContaCorrente;    // ContaCorrenteClientException
+using System.Security.Claims;
 
 namespace BankMore.Transferencia.Api.Controllers;
 
@@ -20,9 +20,33 @@ public sealed class TransferenciasController : ControllerBase
         _mediator = mediator;
     }
 
-    /// <summary>
-    /// Efetuando transferência entre contas da mesma instituição.
-    /// </summary>
+    /// <summary>Efetuando transferência entre contas da mesma instituição.</summary>
+    /// <remarks>
+    /// Orquestrando débito na conta do token e crédito na conta de destino.
+    /// Usando idempotência via <c>IdempotencyKey</c>. Em falha no crédito, aplicando estorno na origem.
+    ///
+    /// <b>Exemplo de request</b>
+    /// {
+    ///   "idempotencyKey": "t-001",
+    ///   "numeroContaDestino": "100001",
+    ///   "valor": 25.50
+    /// }
+    ///
+    /// <b>204 No Content</b> — operação concluída
+    ///
+    /// <b>400 BadRequest</b>
+    /// { "message": "Número da conta de destino inválido.", "type": "INVALID_ACCOUNT" }
+    ///
+    /// <b>403 Forbidden</b>
+    /// { "message": "Token inválido.", "type": "INVALID_ACCOUNT" }
+    /// </remarks>
+    /// <param name="req">Dados da transferência.</param>
+    /// <param name="ct">Token de cancelamento.</param>
+    /// <response code="204">Concluindo a transferência.</response>
+    /// <response code="400">
+    /// Erros de regra: <c>INVALID_ACCOUNT</c>, <c>INACTIVE_ACCOUNT</c>, <c>INVALID_VALUE</c>, <c>TRANSFER_FAILED</c>.
+    /// </response>
+    /// <response code="403">Token inválido/expirado.</response>
     [HttpPost]
     [Consumes("application/json")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -81,7 +105,12 @@ public sealed class TransferenciasController : ControllerBase
         }
     }
 
-    // DTO do body
+    /// <summary>Dados para efetuar transferência.</summary>
+    /// <remarks>
+    /// <c>IdempotencyKey</c> garante reexecução segura.
+    /// <c>NumeroContaDestino</c> é o número da conta da mesma instituição.
+    /// <c>Valor</c> deve ser positivo (duas casas decimais).
+    /// </remarks>
     public sealed record EfetuarTransferenciaRequest(
         string IdempotencyKey,     // chave idempotente do cliente
         string NumeroContaDestino, // número da conta de destino

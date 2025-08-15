@@ -1,13 +1,8 @@
-﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
-using FluentAssertions;
-using NSubstitute;
-using Xunit;
-
-using BankMore.ContaCorrente.Application.Common;         // ErrorCodes
+﻿using BankMore.ContaCorrente.Application.Common;         // ErrorCodes
 using BankMore.ContaCorrente.Application.Movimentacao;   // IMovimentoRepository
 using BankMore.ContaCorrente.Application.Saldo;          // ConsultarSaldoQuery/Handler/SaldoDto/SaldoException
+using FluentAssertions;
+using NSubstitute;
 
 public class ConsultarSaldoHandlerTests
 {

@@ -3,9 +3,6 @@
 // A Infrastructure (Dapper/SQLite) fornecerá a implementação concreta.
 // Por que assim? Mantemos a Application desacoplada de detalhes de banco/ORM (Ports & Adapters).
 
-using System.Threading;
-using System.Threading.Tasks;
-
 namespace BankMore.ContaCorrente.Application.Contas;
 
 public interface IContaRepository

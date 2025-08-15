@@ -1,13 +1,8 @@
-﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using BankMore.ContaCorrente.Application.Auth;       // IPasswordHasher
+using BankMore.ContaCorrente.Application.Cadastro;   // CadastrarContaCommand/Handler/Exception
+using BankMore.ContaCorrente.Application.Contas;     // IContaRepository
 using FluentAssertions;
 using NSubstitute;
-using Xunit;
-
-using BankMore.ContaCorrente.Application.Cadastro;   // CadastrarContaCommand/Handler/Exception
-using BankMore.ContaCorrente.Application.Auth;       // IPasswordHasher
-using BankMore.ContaCorrente.Application.Contas;     // IContaRepository
 
 public class CadastrarContaHandlerTests
 {

@@ -3,9 +3,6 @@ using BankMore.Transferencia.Application.ContaCorrente;    // IContaCorrenteClie
 using BankMore.Transferencia.Application.Transferencias;   // EfetuarTransferenciaCommand/Handler/ITransferenciaRepository/TransferenciaException
 using FluentAssertions;
 using NSubstitute;
-using System.Threading;
-using System.Threading.Tasks;
-using Xunit;
 
 public class EfetuarTransferenciaHandlerTests
 {

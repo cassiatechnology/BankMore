@@ -1,6 +1,4 @@
-﻿using System;
-using System.IO;
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 
 namespace BankMore.Transferencia.Infrastructure.Db;
 
@@ -61,7 +59,7 @@ public static class DbInitializer
 
         // Observações:
         // - O script tem múltiplas instruções; o provider do SQLite aceita em um único CommandText.
-        // - Mantivemos tipos/formatos fiéis ao arquivo (TEXT/REAL; data como TEXT DD/MM/YYYY).
+        // - Mantive tipos/formatos fiéis ao arquivo (TEXT/REAL; data como TEXT DD/MM/YYYY).
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
 

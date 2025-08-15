@@ -8,9 +8,9 @@
 // Observação: o desafio pede apenas SENHA (hash) e SALT; não vamos versionar algoritmo/iters no banco.
 //            Caso precise rotacionar parâmetros, uma coluna "algo" ou "rev" ajudaria.
 
+using BankMore.ContaCorrente.Application.Auth;
 using System.Security.Cryptography;
 using System.Text;
-using BankMore.ContaCorrente.Application.Auth;
 
 namespace BankMore.ContaCorrente.Infrastructure.Security;
 

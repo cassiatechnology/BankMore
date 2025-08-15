@@ -1,6 +1,5 @@
-﻿using Xunit;
+﻿using BankMore.ContaCorrente.Application.Common; // Cpf.TryNormalize
 using FluentAssertions;
-using BankMore.ContaCorrente.Application.Common; // Cpf.TryNormalize
 
 namespace BankMore.ContaCorrente.UnitTests;
 

@@ -2,8 +2,6 @@
 // Mantendo as operações necessárias para validar conta, registrar movimento de forma idempotente
 // e calcular saldo.
 
-using System.Threading;
-using System.Threading.Tasks;
 using BankMore.ContaCorrente.Domain.Entities;
 
 namespace BankMore.ContaCorrente.Application.Movimentacao;

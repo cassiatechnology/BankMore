@@ -1,7 +1,5 @@
-﻿using System;
+﻿using BankMore.ContaCorrente.Domain.Entities; // Movimento
 using FluentAssertions;
-using Xunit;
-using BankMore.ContaCorrente.Domain.Entities; // Movimento
 
 namespace BankMore.ContaCorrente.UnitTests;
 

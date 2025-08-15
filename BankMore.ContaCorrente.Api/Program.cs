@@ -1,19 +1,20 @@
-using System.Data;
-using System.Text;
 using BankMore.ContaCorrente.Application;
+using BankMore.ContaCorrente.Application.Auth;    // IPasswordHasher
+using BankMore.ContaCorrente.Application.Contas;  // IContaRepository
+using BankMore.ContaCorrente.Application.Movimentacao;   // IMovimentoRepository, MovimentoRepository
 using BankMore.ContaCorrente.Infrastructure.Db;
+using BankMore.ContaCorrente.Infrastructure.Repositories; // ContaRepository
+using BankMore.ContaCorrente.Infrastructure.Security;     // Pbkdf2PasswordHasher
 using Dapper;
-using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
-using BankMore.ContaCorrente.Application.Auth;    // IPasswordHasher
-using BankMore.ContaCorrente.Application.Contas;  // IContaRepository
-using BankMore.ContaCorrente.Application.Movimentacao;   // IMovimentoRepository, MovimentoRepository
-using BankMore.ContaCorrente.Infrastructure.Repositories; // ContaRepository
-using BankMore.ContaCorrente.Infrastructure.Security;     // Pbkdf2PasswordHasher
+using System.Data;
+using System.Text;
+using System.Reflection;
+
 
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
@@ -49,6 +50,22 @@ builder.Services.AddSwaggerGen(opt =>
             Array.Empty<string>()
         }
     });
+
+    // Lendo os XMLs de comentários (Api + Application + Domain)
+    var basePath = AppContext.BaseDirectory;
+    var xmls = new[]
+    {
+        "BankMore.ContaCorrente.Api.xml",
+        "BankMore.ContaCorrente.Application.xml",
+        "BankMore.ContaCorrente.Domain.xml"
+    };
+
+    foreach (var file in xmls)
+    {
+        var path = Path.Combine(basePath, file);
+        if (File.Exists(path))
+            opt.IncludeXmlComments(path, includeControllerXmlComments: true);
+    }
 });
 
 // 3) JWT (mapeando falhas para 403 conforme requisito)
@@ -69,7 +86,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ClockSkew = TimeSpan.FromMinutes(1)
         };
 
-        // Por padrão seria 401; vamos responder 403 como especificado
         options.Events = new JwtBearerEvents
         {
             OnChallenge = context =>
@@ -125,7 +141,7 @@ DbInitializer.EnsureCreated(
     csConta!,
     msg => app.Logger.LogInformation(msg));
 
-// Swagger (em Dev sempre ligado; em Prod pode condicionar por env)
+// Swagger
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -133,10 +149,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
-// Health aberto (se quiser 100% fechado, remova AllowAnonymous)
-app.MapGet("/health", () => Results.Ok(new { ok = true, service = "conta-corrente" }))
-   .AllowAnonymous();
 
 app.Run();
 

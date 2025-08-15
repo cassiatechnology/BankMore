@@ -2,9 +2,9 @@
 // Aplica Ports & Adapters: a Application conhece a interface; aqui faço o acesso ao SQLite.
 // Mantém transação onde necessário e idempotência via tabela `idempotencia`.
 
-using System.Data;
-using Dapper;
 using BankMore.Transferencia.Application.Transferencias;
+using Dapper;
+using System.Data;
 using Entity = BankMore.Transferencia.Domain.Entities;
 
 namespace BankMore.Transferencia.Infrastructure.Repositories;

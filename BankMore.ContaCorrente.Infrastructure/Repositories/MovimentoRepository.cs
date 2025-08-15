@@ -2,11 +2,10 @@
 // Aplicando Ports & Adapters: a Application conhece a interface; aqui faço o acesso ao SQLite.
 // Mantendo transação na inserção idempotente e cálculos simples para saldo.
 
-using System.Data;
-using Dapper;
-using Microsoft.Data.Sqlite;
 using BankMore.ContaCorrente.Application.Movimentacao;
 using BankMore.ContaCorrente.Domain.Entities;
+using Dapper;
+using System.Data;
 
 namespace BankMore.ContaCorrente.Infrastructure.Repositories;
 

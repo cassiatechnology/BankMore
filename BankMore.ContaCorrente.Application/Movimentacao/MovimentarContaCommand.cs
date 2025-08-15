@@ -1,8 +1,7 @@
-﻿using System.Text.Json;
-using MediatR;
-using BankMore.ContaCorrente.Application.Common;       // ErrorCodes
-using BankMore.ContaCorrente.Application.Movimentacao; // IMovimentoRepository
+﻿using BankMore.ContaCorrente.Application.Common;       // ErrorCodes
 using BankMore.ContaCorrente.Domain.Entities;          // Movimento
+using MediatR;
+using System.Text.Json;
 
 namespace BankMore.ContaCorrente.Application.Movimentacao;
 

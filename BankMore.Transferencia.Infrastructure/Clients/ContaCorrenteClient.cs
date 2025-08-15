@@ -8,11 +8,10 @@
 //   400 -> { message, type } (erros de negócio)
 //   401/403 -> { message, type } (token inválido/expirado ou sem permissão)
 
-using System.Net.Http;
+using BankMore.Transferencia.Application.ContaCorrente;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using BankMore.Transferencia.Application.ContaCorrente;
 
 namespace BankMore.Transferencia.Infrastructure.Clients;
 

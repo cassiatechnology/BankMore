@@ -1,7 +1,7 @@
-﻿using MediatR;
+﻿using BankMore.ContaCorrente.Application.Auth;         // IPasswordHasher (porta)
 using BankMore.ContaCorrente.Application.Common;       // Cpf util (sanitização/validação)
-using BankMore.ContaCorrente.Application.Auth;         // IPasswordHasher (porta)
 using BankMore.ContaCorrente.Application.Contas;       // IContaRepository (porta)
+using MediatR;
 
 namespace BankMore.ContaCorrente.Application.Cadastro;
 
@@ -35,9 +35,6 @@ public sealed class CadastrarContaHandler : IRequestHandler<CadastrarContaComman
         if (string.IsNullOrWhiteSpace(request.Senha))
             throw new CadastrarContaException("Senha obrigatória."); // também 400 (tipo INVALID_DOCUMENT no Controller)
 
-        // (Opcional) Política mínima de senha — mantemos simples no desafio:
-        // if (request.Senha.Length < 6) throw new CadastrarContaException("Senha muito curta.");
-
         // --- Hash de senha (Ports & Adapters) ---
         // Application usa a PORTA; a implementação concreta (PBKDF2) está na Infrastructure.
         var saltBase64 = _hasher.GenerateSalt();
@@ -47,7 +44,7 @@ public sealed class CadastrarContaHandler : IRequestHandler<CadastrarContaComman
         {
             // --- Persistência (Ports & Adapters) ---
             // Nome do titular: como o contrato atual do Controller não recebe "nome",
-            // usamos um default "Titular". Depois podemos expandir o DTO para aceitar nome.
+            // usei um default "Titular". Depois podemos expandir o DTO para aceitar nome.
             var (idConta, numero) = await _repo.CreateAsync(
                 cpf11: cpf11,
                 nome: "Titular",
@@ -55,14 +52,13 @@ public sealed class CadastrarContaHandler : IRequestHandler<CadastrarContaComman
                 saltBase64: saltBase64,
                 ct: ct);
 
-            // Retornamos o NÚMERO DA CONTA conforme pedido pelo enunciado.
+            // Retorna o NÚMERO DA CONTA.
             return numero.ToString();
         }
         catch (InvalidOperationException ex)
         {
             // O repositório lança InvalidOperationException para casos como CPF duplicado (UNIQUE).
-            // O enunciado só especifica INVALID_DOCUMENT para CPF inválido;
-            // neste desafio, trataremos "CPF já cadastrado" também como documento inválido no contrato HTTP.
+            // Estou tratando "CPF já cadastrado" também como documento inválido no contrato HTTP.
             throw new CadastrarContaException(ex.Message);
         }
     }

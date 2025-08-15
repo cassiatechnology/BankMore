@@ -1,8 +1,6 @@
-﻿using System;
-using FluentAssertions;
-using Xunit;
-using BankMore.ContaCorrente.Application.Auth;            // IPasswordHasher
+﻿using BankMore.ContaCorrente.Application.Auth;            // IPasswordHasher
 using BankMore.ContaCorrente.Infrastructure.Security;     // Pbkdf2PasswordHasher
+using FluentAssertions;
 
 namespace BankMore.ContaCorrente.UnitTests;
 
