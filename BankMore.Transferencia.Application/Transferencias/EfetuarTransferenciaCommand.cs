@@ -1,5 +1,7 @@
-﻿using MediatR;
+﻿using System.Text.Json;
+using MediatR;
 using BankMore.Transferencia.Application.Common;
+using TransfrenciaDomain = BankMore.Transferencia.Domain.Entities;
 
 namespace BankMore.Transferencia.Application.Transferencias;
 
@@ -16,14 +18,22 @@ public sealed record EfetuarTransferenciaCommand(
 
 /// <summary>
 /// Handler do Command. Aqui aplicamos as validações de caso de uso e orquestramos integrações.
-/// No stub, só validamos entrada. A lógica real (débito/crédito/compensação) entra no próximo passo.
+/// Nesta etapa: persistência mínima + IDÊMPOTÊNCIA usando o repositório (Dapper/SQLite na Infra).
+/// Próxima etapa: orquestrar Débito→Crédito→Compensação chamando a API de Conta Corrente.
 /// </summary>
 public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransferenciaCommand, Unit>
 {
-    public Task<Unit> Handle(EfetuarTransferenciaCommand request, CancellationToken ct)
+    private readonly ITransferenciaRepository _repo;
+
+    public EfetuarTransferenciaHandler(ITransferenciaRepository repo)
+    {
+        _repo = repo;
+    }
+
+    public async Task<Unit> Handle(EfetuarTransferenciaCommand request, CancellationToken ct)
     {
         // ---------------------------
-        // Validações mínimas (stub)
+        // Validações de entrada (regras de caso de uso)
         // ---------------------------
         if (string.IsNullOrWhiteSpace(request.ContaOrigemId))
             throw new TransferenciaException("Conta de origem não informada.", ErrorCodes.INVALID_ACCOUNT);
@@ -37,33 +47,67 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
             throw new TransferenciaException("IdempotencyKey é obrigatória.", ErrorCodes.TRANSFER_FAILED);
 
-        // -----------------------------------------------------------------------------
-        // TODO (próximos passos) - Orquestração do fluxo (SAGA simplificada):
-        // 1) Verificar idempotência (tabela TRANSFERENCIA.IDEMPOTENCIA):
-        //      - Se existir a mesma IdempotencyKey -> retornar o MESMO resultado (idempotente)
-        //      - Caso contrário -> registrar "in-progress" (ou persistir requisição)
-        //
-        // 2) Chamar API Conta Corrente para DÉBITO da origem:
-        //      - POST /api/conta-corrente/movimentacoes { Tipo='D', Valor, IdempotencyKey }
-        //      - Repassar JWT do usuário (Token forwarding)
-        //      - Validar 204; caso 400 -> mapear e encerrar com erro
-        //
-        // 3) Chamar API Conta Corrente para CRÉDITO no destino:
-        //      - POST /api/conta-corrente/movimentacoes { Tipo='C', Valor, NumeroConta=destino, IdempotencyKey }
-        //      - Repassar JWT
-        //      - Se FALHAR -> executar COMPENSAÇÃO (estorno na origem)
-        //        OBS: O enunciado diz "estorno ... realizar um DÉBITO" (mantemos conforme especificação),
-        //             embora em cenários comuns a compensação da origem seria um CRÉDITO.
-        //
-        // 4) Persistir o registro na tabela TRANSFERENCIA (data, origem, destino, valor).
-        //
-        // 5) Marcar idempotência como concluída com o resultado.
-        //
-        // 6) (Opcional) Publicar evento "transferências realizadas" no Kafka.
-        // -----------------------------------------------------------------------------
+        // ---------------------------
+        // DDD: construir a ENTIDADE de domínio (independente da Infra)
+        // - DataMovimento no formato "DD/MM/YYYY" (conforme script do desafio)
+        // - Valor arredondado a 2 casas (domínio monetário)
+        // ---------------------------
+        var entity = TransfrenciaDomain.Transferencia.CreateNew(
+            contaOrigemId: request.ContaOrigemId,
+            contaDestinoId: request.NumeroContaDestino,
+            whenUtc: DateTime.UtcNow,
+            valor: request.Valor
+        );
 
-        // Stub: como ainda não integramos com ContaCorrente nem persistimos, apenas confirmamos.
-        return Task.FromResult(Unit.Value);
+        // ---------------------------
+        // Snapshots (auditoria/replay) para a TABELA DE IDEMPOTÊNCIA
+        // Mantemos textos simples (JSON) de requisição e resultado.
+        // Resultado canônico para este caso de uso: "NO_CONTENT" (HTTP 204).
+        // ---------------------------
+        var requisicaoSnapshot = new
+        {
+            request.IdempotencyKey,
+            request.ContaOrigemId,
+            request.NumeroContaDestino,
+            request.Valor,
+            EntityId = entity.IdTransferencia,
+            entity.DataMovimento
+        };
+        var requisicaoJson = JsonSerializer.Serialize(requisicaoSnapshot);
+
+        var resultadoSnapshot = new { status = "NO_CONTENT" };
+        var resultadoJson = JsonSerializer.Serialize(resultadoSnapshot);
+
+        // ---------------------------
+        // IDEMPOTÊNCIA (PUXANDO A PORTA/REPOSITÓRIO)
+        // - TryRegisterAsync deve ser ATÔMICO: inserir transferencia + registrar idempotência na mesma transação.
+        // - Se a chave já existir, NÃO duplica — apenas retorna o mesmo resultado (replay seguro).
+        // ---------------------------
+        var firstExecution = await _repo.TryRegisterAsync(
+            entity,
+            request.IdempotencyKey,
+            requisicaoJson,
+            resultadoJson,
+            ct);
+
+        if (!firstExecution)
+        {
+            // Replay idempotente:
+            // Opcionalmente lemos o "resultado" para manter consistência caso mudemos o contrato no futuro.
+            var stored = await _repo.GetResultadoByIdempotencyKeyAsync(request.IdempotencyKey, ct);
+            // Como o retorno canônico é 204 (sem body), basta retornar Unit.
+            return Unit.Value;
+        }
+
+        // ---------------------------
+        // FUTURO (próximos passos – SAGA simplificada):
+        // 1) Chamar API Conta Corrente para DÉBITO da origem.
+        // 2) Chamar API Conta Corrente para CRÉDITO no destino.
+        // 3) Em falha no crédito -> COMPENSAÇÃO conforme enunciado.
+        // 4) (Opcional) Publicar evento "transferências realizadas" no Kafka.
+        // ---------------------------
+
+        return Unit.Value;
     }
 }
 

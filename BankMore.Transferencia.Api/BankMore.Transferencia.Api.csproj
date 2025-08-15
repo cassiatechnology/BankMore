@@ -21,4 +21,8 @@
     <ProjectReference Include="..\BankMore.Transferencia.Infrastructure\BankMore.Transferencia.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="data\" />
+  </ItemGroup>
+
 </Project>

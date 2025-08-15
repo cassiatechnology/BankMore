@@ -1,6 +1,7 @@
-using System.Data;
-using System.Text;
-using BankMore.Transferencia.Application;
+﻿using BankMore.Transferencia.Application;
+using BankMore.Transferencia.Application.Transferencias;
+using BankMore.Transferencia.Infrastructure.Db;
+using BankMore.Transferencia.Infrastructure.Repositories;
 using Dapper;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -8,11 +9,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
+using System.Data;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
 
-// Controllers + autoriza��o global
+// Controllers + autorização global
 builder.Services.AddControllers(o =>
 {
     var policy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
@@ -23,7 +26,7 @@ builder.Services.AddControllers(o =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opt =>
 {
-    opt.SwaggerDoc("v1", new() { Title = "BankMore Transfer�ncia API", Version = "v1" });
+    opt.SwaggerDoc("v1", new() { Title = "BankMore Transferência API", Version = "v1" });
     opt.EnableAnnotations();
     opt.AddSecurityDefinition("Bearer", new()
     {
@@ -40,7 +43,7 @@ builder.Services.AddSwaggerGen(opt =>
     });
 });
 
-// JWT (for�ando 403 quando inv�lido/expirado)
+// JWT (forçando 403 quando inválido/expirado)
 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"]!));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -78,7 +81,25 @@ builder.Services.AddScoped<IDbConnection>(_ =>
     return conn;
 });
 
+// DDD Ports & Adapters: a Application depende da interface; a Infrastructure fornece a implementação.
+// Aqui conectamos as duas via DI.
+builder.Services.AddScoped<ITransferenciaRepository, TransferenciaRepository>();
+
 var app = builder.Build();
+
+// Inicializa o banco (cria diretório/arquivo .db e tabelas executando o SQL embedded)
+// Conceito: camada Infra faz bootstrap; aqui no startup apenas disparamos.
+// Por que aqui? Executa uma única vez no início da aplicação.
+var cs = builder.Configuration.GetConnectionString("Transferencia");
+if (string.IsNullOrWhiteSpace(cs))
+{
+    // Falha de configuração evidente → evita null ref silenciosa depois
+    throw new InvalidOperationException("ConnectionStrings:Transferencia não configurada.");
+}
+
+// Usa o logger da aplicação para acompanhar a execução (o initializer aceita um callback de log)
+DbInitializer.EnsureCreated(cs!, msg => app.Logger.LogInformation(msg));
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseAuthentication();
