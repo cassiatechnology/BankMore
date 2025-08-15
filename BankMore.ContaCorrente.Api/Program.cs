@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text;
 using BankMore.ContaCorrente.Application;
+using BankMore.ContaCorrente.Infrastructure.Db;
 using Dapper;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -99,6 +100,17 @@ builder.Services.AddScoped<IDbConnection>(_ =>
 });
 
 var app = builder.Build();
+
+// 6) Inicializa o banco de dados (executa o script SQL do Embedded Resource)
+var csConta = builder.Configuration.GetConnectionString("ContaCorrente");
+if (string.IsNullOrWhiteSpace(csConta))
+{
+    throw new InvalidOperationException("ConnectionStrings:ContaCorrente nao configurada.");
+}
+
+DbInitializer.EnsureCreated(
+    csConta!,
+    msg => app.Logger.LogInformation(msg));
 
 // Swagger (em Dev sempre ligado; em Prod pode condicionar por env)
 app.UseSwagger();

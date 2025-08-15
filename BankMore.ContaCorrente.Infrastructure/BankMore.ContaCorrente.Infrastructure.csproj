@@ -9,6 +9,10 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.8" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Db\Scripts\contacorrente.sql" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
