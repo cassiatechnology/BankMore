@@ -11,6 +11,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
 using System.Data;
 using System.Text;
+using BankMore.Transferencia.Application.ContaCorrente;   // IContaCorrenteClient
+using BankMore.Transferencia.Infrastructure.Clients;      // ContaCorrenteClient
+
 
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
@@ -84,6 +87,20 @@ builder.Services.AddScoped<IDbConnection>(_ =>
 // DDD Ports & Adapters: a Application depende da interface; a Infrastructure fornece a implementação.
 // Aqui conectamos as duas via DI.
 builder.Services.AddScoped<ITransferenciaRepository, TransferenciaRepository>();
+
+// Camada Application: porta para chamar a ContaCorrente.Api via HTTP
+builder.Services.AddHttpClient<IContaCorrenteClient, ContaCorrenteClient>((sp, http) =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = cfg.GetSection("ContaCorrente")["BaseUrl"];
+
+    if (string.IsNullOrWhiteSpace(baseUrl))
+        throw new InvalidOperationException("Config 'ContaCorrente:BaseUrl' não definida.");
+
+    http.BaseAddress = new Uri(baseUrl, UriKind.Absolute); // ex.: http://localhost:5175
+    // (opcional) headers padrões:
+    // http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
 
 var app = builder.Build();
 

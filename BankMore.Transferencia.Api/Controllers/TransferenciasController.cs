@@ -1,72 +1,90 @@
 ﻿using System.Security.Claims;
-using BankMore.Transferencia.Application.Common;
-using BankMore.Transferencia.Application.Transferencias;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Swashbuckle.AspNetCore.Annotations;
+using BankMore.Transferencia.Application.Common;            // ErrorCodes
+using BankMore.Transferencia.Application.Transferencias;   // EfetuarTransferenciaCommand, TransferenciaException
+using BankMore.Transferencia.Application.ContaCorrente;    // ContaCorrenteClientException
 
 namespace BankMore.Transferencia.Api.Controllers;
 
-// Controller "fino": aplica princípios de CQRS e Single Responsibility.
-// Ele faz a ponte HTTP <-> Application (via MediatR), sem conter regra de negócio.
 [ApiController]
 [Route("api/transferencias")]
-public class TransferenciasController : ControllerBase
+[Authorize] // protegendo o endpoint com JWT
+public sealed class TransferenciasController : ControllerBase
 {
     private readonly IMediator _mediator;
 
-    public TransferenciasController(IMediator mediator) => _mediator = mediator;
-
-    // DTO de transporte (apenas contrato HTTP)
-    public sealed record EfetuarTransferenciaRequest(
-        string IdempotencyKey,
-        string NumeroContaDestino,
-        decimal Valor
-    );
-
-    [HttpPost]
-    [SwaggerOperation(
-        Summary = "Efetuar transferência entre contas da mesma instituição",
-        Description = "Requer JWT. Validações mínimas (stub). " +
-                      "Nos próximos passos: orquestração Débito→Crédito→Compensação e idempotência real.")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]                   // Sucesso (stub)
-    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]  // Erros de regra de negócio
-    [ProducesResponseType(typeof(object), StatusCodes.Status403Forbidden)]   // Token inválido/expirado (mapeado no JwtBearerEvents)
-    public async Task<IActionResult> EfetuarTransferencia(
-        [FromBody] EfetuarTransferenciaRequest req,
-        CancellationToken ct)
+    public TransferenciasController(IMediator mediator)
     {
-        // Recuperamos a identificação da conta de ORIGEM a partir do JWT.
-        // Preferência: ClaimTypes.NameIdentifier; fallback: "sub".
+        _mediator = mediator;
+    }
+
+    /// <summary>
+    /// Efetuando transferência entre contas da mesma instituição.
+    /// </summary>
+    [HttpPost]
+    [Consumes("application/json")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Efetuar([FromBody] EfetuarTransferenciaRequest req, CancellationToken ct)
+    {
+        // Lendo id da conta do JWT
         var contaOrigemId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                           ?? User.FindFirstValue("sub");
+                            ?? User.FindFirstValue("sub");
 
         if (string.IsNullOrWhiteSpace(contaOrigemId))
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Token inválido.", type = ErrorCodes.INVALID_ACCOUNT });
+
+        // Extraindo o token do header Authorization
+        var authHeader = Request.Headers["Authorization"].ToString();
+        string accessToken = string.Empty;
+        if (!string.IsNullOrWhiteSpace(authHeader))
         {
-            // Em condições normais, o filtro global de autorização e o JwtBearerEvents já retornariam 403.
-            // Este fallback evita NullReference e esclarece o motivo.
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Token inválido.", type = ErrorCodes.INVALID_ACCOUNT });
+            const string bearer = "Bearer ";
+            accessToken = authHeader.StartsWith(bearer, StringComparison.OrdinalIgnoreCase)
+                ? authHeader.Substring(bearer.Length).Trim()
+                : authHeader.Trim();
         }
+
+        if (string.IsNullOrWhiteSpace(accessToken))
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Token ausente.", type = ErrorCodes.INVALID_ACCOUNT });
 
         try
         {
-            // Aplicando CQRS: Controller cria o Command e delega ao MediatR/Handler.
+            // Montando o command com dados do body, id da conta do token e o JWT
             var cmd = new EfetuarTransferenciaCommand(
                 ContaOrigemId: contaOrigemId,
                 NumeroContaDestino: req.NumeroContaDestino,
                 Valor: req.Valor,
-                IdempotencyKey: req.IdempotencyKey
+                IdempotencyKey: req.IdempotencyKey,
+                AccessToken: accessToken
             );
 
             await _mediator.Send(cmd, ct);
 
-            // Por contrato, Transferência retorna 204 em caso de sucesso.
+            // Retornando 204 quando concluir
             return NoContent();
+        }
+        catch (ContaCorrenteClientException ex) when (ex.StatusCode == 401 || ex.StatusCode == 403)
+        {
+            // Token inválido/expirado → 403
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message, type = ex.ErrorType });
         }
         catch (TransferenciaException ex)
         {
-            // Padrão de erro solicitado: body com { message, type } e HTTP 400
+            // Mapeando falhas de regra para 400
             return BadRequest(new { message = ex.Message, type = ex.ErrorType });
         }
     }
+
+    // DTO do body
+    public sealed record EfetuarTransferenciaRequest(
+        string IdempotencyKey,     // chave idempotente do cliente
+        string NumeroContaDestino, // número da conta de destino
+        decimal Valor              // valor da transferência
+    );
 }

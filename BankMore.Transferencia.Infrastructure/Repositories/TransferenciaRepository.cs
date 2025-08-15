@@ -1,17 +1,11 @@
-﻿// Camada: Infrastructure (DDD) — implementação Dapper da porta ITransferenciaRepository.
-// Conceitos aplicados:
-// - "Ports & Adapters": a Application depende da interface; aqui adaptamos para SQLite/Dapper.
-// - Idempotência: checamos a chave em 'idempotencia'; se existir, NADA é re-executado.
-// - Transação: inserimos 'transferencia' e 'idempotencia' ATOMICAMENTE (uma única transação).
-//
-// Observações:
-// - Tipos do schema seguem o SQL do desafio (TEXT/REAL). O domínio usa decimal; Dapper/SQLite convertem.
-// - DataMovimento é "DD/MM/YYYY" (conforme script). Consultas e formatações serão tratadas na Application.
+﻿// Camada: Infrastructure — implementação Dapper da porta ITransferenciaRepository.
+// Aplica Ports & Adapters: a Application conhece a interface; aqui faço o acesso ao SQLite.
+// Mantém transação onde necessário e idempotência via tabela `idempotencia`.
 
 using System.Data;
 using Dapper;
 using BankMore.Transferencia.Application.Transferencias;
-using TransferenciaDomain = BankMore.Transferencia.Domain.Entities;
+using Entity = BankMore.Transferencia.Domain.Entities;
 
 namespace BankMore.Transferencia.Infrastructure.Repositories;
 
@@ -19,73 +13,156 @@ public sealed class TransferenciaRepository : ITransferenciaRepository
 {
     private readonly IDbConnection _conn;
 
-    public TransferenciaRepository(IDbConnection conn)
-        => _conn = conn;
+    public TransferenciaRepository(IDbConnection conn) => _conn = conn;
 
+    /// <summary>
+    /// Inicia idempotência. Insere a chave se ainda não existir.
+    /// Retorna true na primeira execução; false no replay.
+    /// </summary>
+    public async Task<bool> TryBeginIdempotentAsync(
+        string idempotencyKey,
+        string requisicaoJson,
+        CancellationToken ct)
+    {
+        EnsureOpen();
+
+        const string sql = @"
+INSERT OR IGNORE INTO idempotencia (chave_idempotencia, requisicao, resultado)
+VALUES (@Key, @Req, NULL);";
+
+        var affected = await _conn.ExecuteAsync(
+            new CommandDefinition(sql, new { Key = idempotencyKey, Req = requisicaoJson }, cancellationToken: ct));
+
+        return affected > 0;
+    }
+
+    /// <summary>
+    /// Conclui a transferência após sucesso externo. Insere em `transferencia` e atualiza `idempotencia.resultado`.
+    /// </summary>
+    public async Task CompleteAsync(
+        Entity.Transferencia entity,
+        string idempotencyKey,
+        string resultadoJson,
+        CancellationToken ct)
+    {
+        EnsureOpen();
+
+        using var tx = _conn.BeginTransaction();
+
+        const string insertTransferencia = @"
+INSERT INTO transferencia
+  (idtransferencia, idcontacorrente_origem, idcontacorrente_destino, datamovimento, valor)
+VALUES
+  (@Id, @Origem, @Destino, @Data, @Valor);";
+
+        var args = new
+        {
+            Id = entity.IdTransferencia,
+            Origem = entity.IdContaCorrenteOrigem,
+            Destino = entity.IdContaCorrenteDestino,
+            Data = entity.DataMovimento, // "DD/MM/YYYY"
+            Valor = entity.Valor
+        };
+
+        await _conn.ExecuteAsync(
+            new CommandDefinition(insertTransferencia, args, transaction: tx, cancellationToken: ct));
+
+        const string updateIdem = @"
+UPDATE idempotencia
+   SET resultado = @Res
+ WHERE chave_idempotencia = @Key;";
+
+        var upd = await _conn.ExecuteAsync(
+            new CommandDefinition(updateIdem, new { Key = idempotencyKey, Res = resultadoJson }, transaction: tx, cancellationToken: ct));
+
+        if (upd == 0)
+        {
+            tx.Rollback();
+            throw new InvalidOperationException("Chave de idempotência não iniciada.");
+        }
+
+        tx.Commit();
+    }
+
+    /// <summary>
+    /// Retorna o JSON de resultado salvo para a chave informada.
+    /// </summary>
+    public async Task<string?> GetResultadoByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+    {
+        EnsureOpen();
+
+        const string sql = "SELECT resultado FROM idempotencia WHERE chave_idempotencia = @Key;";
+        return await _conn.ExecuteScalarAsync<string?>(
+            new CommandDefinition(sql, new { Key = idempotencyKey }, cancellationToken: ct));
+    }
+
+    /// <summary>
+    /// Fluxo antigo: grava transferência e idempotência na mesma transação.
+    /// Mantém para compatibilidade.
+    /// </summary>
     public async Task<bool> TryRegisterAsync(
-        TransferenciaDomain.Transferencia entity,
+        Entity.Transferencia entity,
         string idempotencyKey,
         string requisicaoJson,
         string resultadoJson,
         CancellationToken ct)
     {
-        // Iniciamos uma transação para garantir atomicidade entre as duas tabelas.
+        EnsureOpen();
+
         using var tx = _conn.BeginTransaction();
 
-        // 1) Checagem de idempotência: se já processamos essa chave, não reexecutamos.
+        // Verifica idempotência
         var exists = await _conn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(1) FROM idempotencia WHERE chave_idempotencia = @key;",
-            new { key = idempotencyKey }, tx);
+            new CommandDefinition(
+                "SELECT COUNT(1) FROM idempotencia WHERE chave_idempotencia = @Key;",
+                new { Key = idempotencyKey },
+                transaction: tx,
+                cancellationToken: ct));
 
         if (exists > 0)
         {
-            tx.Rollback(); // nada a fazer; evitamos efeitos colaterais
-            return false;  // sinaliza ao Handler que é um replay
+            tx.Rollback();
+            return false;
         }
 
-        // 2) Inserir a transferência (schema do arquivo transferencia.sql)
+        // Insere transferência
         const string insertTransferencia = @"
 INSERT INTO transferencia
-    (idtransferencia, idcontacorrente_origem, idcontacorrente_destino, datamovimento, valor)
+  (idtransferencia, idcontacorrente_origem, idcontacorrente_destino, datamovimento, valor)
 VALUES
-    (@Id, @Origem, @Destino, @DataMov, @Valor);";
+  (@Id, @Origem, @Destino, @Data, @Valor);";
 
         var argsTransferencia = new
         {
             Id = entity.IdTransferencia,
             Origem = entity.IdContaCorrenteOrigem,
             Destino = entity.IdContaCorrenteDestino,
-            DataMov = entity.DataMovimento, // "DD/MM/YYYY"
-            Valor = entity.Valor          // decimal -> o provedor cuida da conversão p/ REAL
+            Data = entity.DataMovimento, // "DD/MM/YYYY"
+            Valor = entity.Valor
         };
 
-        await _conn.ExecuteAsync(insertTransferencia, argsTransferencia, tx);
+        await _conn.ExecuteAsync(
+            new CommandDefinition(insertTransferencia, argsTransferencia, transaction: tx, cancellationToken: ct));
 
-        // 3) Registrar a idempotência (request/response para auditoria e replay)
-        const string insertIdempotencia = @"
+        // Registra idempotência
+        const string insertIdem = @"
 INSERT INTO idempotencia
-    (chave_idempotencia, requisicao, resultado)
+  (chave_idempotencia, requisicao, resultado)
 VALUES
-    (@Key, @Req, @Res);";
+  (@Key, @Req, @Res);";
 
-        var argsIdempotencia = new
-        {
-            Key = idempotencyKey,
-            Req = requisicaoJson,
-            Res = resultadoJson
-        };
+        var argsIdem = new { Key = idempotencyKey, Req = requisicaoJson, Res = resultadoJson };
 
-        await _conn.ExecuteAsync(insertIdempotencia, argsIdempotencia, tx);
+        await _conn.ExecuteAsync(
+            new CommandDefinition(insertIdem, argsIdem, transaction: tx, cancellationToken: ct));
 
-        // 4) Commit final — garante "tudo ou nada"
         tx.Commit();
-        return true; // primeira execução (persistiu)
+        return true;
     }
 
-    public async Task<string?> GetResultadoByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+    private void EnsureOpen()
     {
-        // Recupera o resultado previamente armazenado para a chave (útil no replay)
-        const string sql = "SELECT resultado FROM idempotencia WHERE chave_idempotencia = @key;";
-        return await _conn.QuerySingleOrDefaultAsync<string?>(sql, new { key = idempotencyKey });
+        if (_conn.State != ConnectionState.Open)
+            _conn.Open();
     }
 }

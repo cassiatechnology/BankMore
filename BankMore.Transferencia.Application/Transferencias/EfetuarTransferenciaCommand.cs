@@ -1,40 +1,36 @@
 ﻿using System.Text.Json;
 using MediatR;
-using BankMore.Transferencia.Application.Common;
-using TransfrenciaDomain = BankMore.Transferencia.Domain.Entities;
+using BankMore.Transferencia.Application.Common;          // ErrorCodes
+using BankMore.Transferencia.Application.ContaCorrente;   // IContaCorrenteClient, ContaCorrenteClientException
+using Entity = BankMore.Transferencia.Domain.Entities;
 
 namespace BankMore.Transferencia.Application.Transferencias;
 
 /// <summary>
-/// CQRS - Command de ESCRITA: intenção de mudar estado do sistema (criar uma transferência).
-/// Mantém o contrato de entrada específico do caso de uso, desacoplado de transportes (HTTP/Kafka).
+/// Command de transferência: recebe origem (JWT), conta destino (número), valor e chave idempotente.
 /// </summary>
 public sealed record EfetuarTransferenciaCommand(
-    string ContaOrigemId,        // obtido do JWT pelo Controller (não transita CPF aqui)
-    string NumeroContaDestino,   // conta destino (mesma instituição)
+    string ContaOrigemId,        // id da conta do JWT
+    string NumeroContaDestino,   // número da conta de destino
     decimal Valor,               // valor da transferência
-    string IdempotencyKey        // garante reexecução segura (at-least-once / retries do cliente)
+    string IdempotencyKey,       // chave idempotente
+    string AccessToken           // JWT sem o prefixo "Bearer " (para repassar)
 ) : IRequest<Unit>;
 
-/// <summary>
-/// Handler do Command. Aqui aplicamos as validações de caso de uso e orquestramos integrações.
-/// Nesta etapa: persistência mínima + IDÊMPOTÊNCIA usando o repositório (Dapper/SQLite na Infra).
-/// Próxima etapa: orquestrar Débito→Crédito→Compensação chamando a API de Conta Corrente.
-/// </summary>
 public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransferenciaCommand, Unit>
 {
     private readonly ITransferenciaRepository _repo;
+    private readonly IContaCorrenteClient _cc;
 
-    public EfetuarTransferenciaHandler(ITransferenciaRepository repo)
+    public EfetuarTransferenciaHandler(ITransferenciaRepository repo, IContaCorrenteClient cc)
     {
         _repo = repo;
+        _cc = cc;
     }
 
     public async Task<Unit> Handle(EfetuarTransferenciaCommand request, CancellationToken ct)
     {
-        // ---------------------------
-        // Validações de entrada (regras de caso de uso)
-        // ---------------------------
+        // Validando campos
         if (string.IsNullOrWhiteSpace(request.ContaOrigemId))
             throw new TransferenciaException("Conta de origem não informada.", ErrorCodes.INVALID_ACCOUNT);
 
@@ -47,24 +43,20 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
             throw new TransferenciaException("IdempotencyKey é obrigatória.", ErrorCodes.TRANSFER_FAILED);
 
-        // ---------------------------
-        // DDD: construir a ENTIDADE de domínio (independente da Infra)
-        // - DataMovimento no formato "DD/MM/YYYY" (conforme script do desafio)
-        // - Valor arredondado a 2 casas (domínio monetário)
-        // ---------------------------
-        var entity = TransfrenciaDomain.Transferencia.CreateNew(
+        // Convertendo número da conta destino
+        if (!int.TryParse(request.NumeroContaDestino, out var numeroDestino))
+            throw new TransferenciaException("Número da conta de destino inválido.", ErrorCodes.INVALID_ACCOUNT);
+
+        // Construindo entidade de domínio (DataMovimento "DD/MM/YYYY")
+        var entity = Entity.Transferencia.CreateNew(
             contaOrigemId: request.ContaOrigemId,
-            contaDestinoId: request.NumeroContaDestino,
+            contaDestinoId: request.NumeroContaDestino, // armazenando o número como string, conforme schema atual
             whenUtc: DateTime.UtcNow,
             valor: request.Valor
         );
 
-        // ---------------------------
-        // Snapshots (auditoria/replay) para a TABELA DE IDEMPOTÊNCIA
-        // Mantemos textos simples (JSON) de requisição e resultado.
-        // Resultado canônico para este caso de uso: "NO_CONTENT" (HTTP 204).
-        // ---------------------------
-        var requisicaoSnapshot = new
+        // Montando snapshots da idempotência
+        var requisicaoJson = JsonSerializer.Serialize(new
         {
             request.IdempotencyKey,
             request.ContaOrigemId,
@@ -72,48 +64,82 @@ public sealed class EfetuarTransferenciaHandler : IRequestHandler<EfetuarTransfe
             request.Valor,
             EntityId = entity.IdTransferencia,
             entity.DataMovimento
-        };
-        var requisicaoJson = JsonSerializer.Serialize(requisicaoSnapshot);
+        });
+        var resultadoJson = JsonSerializer.Serialize(new { status = "NO_CONTENT" });
 
-        var resultadoSnapshot = new { status = "NO_CONTENT" };
-        var resultadoJson = JsonSerializer.Serialize(resultadoSnapshot);
-
-        // ---------------------------
-        // IDEMPOTÊNCIA (PUXANDO A PORTA/REPOSITÓRIO)
-        // - TryRegisterAsync deve ser ATÔMICO: inserir transferencia + registrar idempotência na mesma transação.
-        // - Se a chave já existir, NÃO duplica — apenas retorna o mesmo resultado (replay seguro).
-        // ---------------------------
-        var firstExecution = await _repo.TryRegisterAsync(
-            entity,
-            request.IdempotencyKey,
-            requisicaoJson,
-            resultadoJson,
-            ct);
-
-        if (!firstExecution)
+        // Iniciando idempotência (begin)
+        var first = await _repo.TryBeginIdempotentAsync(request.IdempotencyKey, requisicaoJson, ct);
+        if (!first)
         {
-            // Replay idempotente:
-            // Opcionalmente lemos o "resultado" para manter consistência caso mudemos o contrato no futuro.
-            var stored = await _repo.GetResultadoByIdempotencyKeyAsync(request.IdempotencyKey, ct);
-            // Como o retorno canônico é 204 (sem body), basta retornar Unit.
+            // Replay idempotente
+            var _ = await _repo.GetResultadoByIdempotencyKeyAsync(request.IdempotencyKey, ct);
             return Unit.Value;
         }
 
-        // ---------------------------
-        // FUTURO (próximos passos – SAGA simplificada):
-        // 1) Chamar API Conta Corrente para DÉBITO da origem.
-        // 2) Chamar API Conta Corrente para CRÉDITO no destino.
-        // 3) Em falha no crédito -> COMPENSAÇÃO conforme enunciado.
-        // 4) (Opcional) Publicar evento "transferências realizadas" no Kafka.
-        // ---------------------------
+        // Orquestração:
+        // 1) Debitando origem
+        try
+        {
+            await _cc.DebitarAsync(
+                accessToken: request.AccessToken,
+                idempotencyKey: request.IdempotencyKey + ":debit",
+                valor: request.Valor,
+                ct: ct);
+        }
+        catch (ContaCorrenteClientException ex)
+        {
+            // Mapeando erro de débito para a resposta do caso de uso
+            // Retornando tipo do erro original quando disponível
+            throw new TransferenciaException(ex.Message,
+                string.IsNullOrWhiteSpace(ex.ErrorType) ? ErrorCodes.TRANSFER_FAILED : ex.ErrorType);
+        }
 
+        // 2) Creditando destino
+        var creditoOk = false;
+        try
+        {
+            await _cc.CreditarAsync(
+                accessToken: request.AccessToken,
+                idempotencyKey: request.IdempotencyKey + ":credit",
+                numeroContaDestino: numeroDestino,
+                valor: request.Valor,
+                ct: ct);
+
+            creditoOk = true;
+        }
+        catch (ContaCorrenteClientException ex)
+        {
+            // 3) Compensação: estornando crédito na origem (creditando de volta)
+            try
+            {
+                await _cc.EstornarCreditoOrigemAsync(
+                    accessToken: request.AccessToken,
+                    idempotencyKey: request.IdempotencyKey + ":estorno",
+                    valor: request.Valor,
+                    ct: ct);
+            }
+            catch
+            {
+                // Mantendo silêncio aqui para não mascarar a causa principal
+            }
+
+            throw new TransferenciaException(ex.Message,
+                string.IsNullOrWhiteSpace(ex.ErrorType) ? ErrorCodes.TRANSFER_FAILED : ex.ErrorType);
+        }
+
+        // 4) Concluindo idempotência e gravando a transferência (após sucesso das operações)
+        if (creditoOk)
+        {
+            await _repo.CompleteAsync(entity, request.IdempotencyKey, resultadoJson, ct);
+        }
+
+        // Concluindo com sucesso
         return Unit.Value;
     }
 }
 
 /// <summary>
-/// Exceção de domínio/caso de uso para Transferência.
-/// Carrega um "type" padronizado para o Controller mapear em { message, type } no HTTP 400.
+/// Exceção do caso de uso de transferência.
 /// </summary>
 public sealed class TransferenciaException : Exception
 {
