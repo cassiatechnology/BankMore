@@ -1,0 +1,37 @@
+services:
+  contacorrente-api:
+    container_name: contacorrente-api
+    build:
+      context: .                           # <- raiz do repo
+      dockerfile: ./BankMore.ContaCorrente.Api/Dockerfile
+    image: bankmore/contacorrente-api:dev
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Jwt__Issuer: "bankmore.auth"
+      Jwt__Audience: "bankmore.api"
+      Jwt__Key: "1d62450183be1fc49493a5e6766a1bd5"   # <<< NOVO
+    volumes:
+      - ./data/contacorrente:/app/data
+    ports:
+      - "5175:5175"
+    restart: unless-stopped
+
+  transferencia-api:
+    container_name: transferencia-api
+    build:
+      context: .                           # <- raiz do repo
+      dockerfile: ./BankMore.Transferencia.Api/Dockerfile
+    image: bankmore/transferencia-api:dev
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ContaCorrente__BaseUrl: "http://contacorrente-api:5175"
+      Jwt__Issuer: "bankmore.auth"
+      Jwt__Audience: "bankmore.api"
+      Jwt__Key: "1d62450183be1fc49493a5e6766a1bd5"   # <<< MESMA CHAVE
+    volumes:
+      - ./data/transferencia:/app/data
+    ports:
+      - "5039:5039"
+    depends_on:
+      - contacorrente-api
+    restart: unless-stopped

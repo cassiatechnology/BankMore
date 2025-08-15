@@ -488,6 +488,12 @@ $RECYCLE.BIN/
 **/data/*.db-wal
 **/data/*.db-shm
 **/data/*.db-journal
+/data/**
+!**/.gitkeep
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
 
 # Arquivos .env adicionais
 .env.*

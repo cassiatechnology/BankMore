@@ -1,0 +1,18 @@
+# IDE / VCS
+.git/
+.vs/
+.vscode/
+*.suo
+*.user
+
+# Build artifacts
+**/bin/
+**/obj/
+TestResults/
+artifacts/
+
+# SO
+.DS_Store
+
+# Dados locais (vamos montar por volume)
+**/data/

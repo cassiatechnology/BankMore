@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+*.swp
+.git/
+.gitignore
+TestResults/
+artifacts/
+*.nupkg
+*.snupkg
+.DS_Store
+data/

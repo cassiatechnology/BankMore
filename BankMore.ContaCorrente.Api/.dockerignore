@@ -1,0 +1,21 @@
+# artefatos de build
+bin/
+obj/
+# IDEs
+.vs/
+.vscode/
+*.user
+*.suo
+*.swp
+# git e outros
+.git/
+.gitignore
+# testes/artefatos que não entram na imagem
+TestResults/
+artifacts/
+*.nupkg
+*.snupkg
+# SO
+.DS_Store
+# dados locais (vamos montar por volume no runtime)
+data/
