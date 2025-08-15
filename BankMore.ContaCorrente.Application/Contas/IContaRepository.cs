@@ -35,4 +35,15 @@ public interface IContaRepository
     /// <param name="ct">CancellationToken</param>
     /// <returns>Modelo de leitura da conta, ou null se não encontrada</returns>
     Task<ContaReadModel?> GetByCpfOrNumeroAsync(string cpfOuNumero, CancellationToken ct);
+
+    /// <summary>
+    /// Obtendo informações de autenticação da conta pelo Id.
+    /// Retornando null quando a conta não existir.
+    /// </summary>
+    Task<(string SenhaHash, string Salt, bool Ativo)?> GetAuthInfoByIdAsync(string contaId, CancellationToken ct);
+
+    /// <summary>
+    /// Inativando a conta (ativo = 0). Operação idempotente.
+    /// </summary>
+    Task InativarAsync(string contaId, CancellationToken ct);
 }

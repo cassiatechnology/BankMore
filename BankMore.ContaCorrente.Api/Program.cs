@@ -11,6 +11,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
 using BankMore.ContaCorrente.Application.Auth;    // IPasswordHasher
 using BankMore.ContaCorrente.Application.Contas;  // IContaRepository
+using BankMore.ContaCorrente.Application.Movimentacao;   // IMovimentoRepository, MovimentoRepository
 using BankMore.ContaCorrente.Infrastructure.Repositories; // ContaRepository
 using BankMore.ContaCorrente.Infrastructure.Security;     // Pbkdf2PasswordHasher
 
@@ -106,6 +107,10 @@ builder.Services.AddScoped<IDbConnection>(_ =>
 // 6) Ports & Adapters (DDD) — expõe implementações concretas para as interfaces da Application
 builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>(); // hashing PBKDF2 (salt por senha)
 builder.Services.AddScoped<IContaRepository, ContaRepository>();     // Dapper/SQLite para contas
+
+// Registrando repositório de movimentação (Ports & Adapters)
+builder.Services.AddScoped<IMovimentoRepository, MovimentoRepository>();
+
 
 var app = builder.Build();
 

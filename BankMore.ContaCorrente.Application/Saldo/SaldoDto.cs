@@ -1,7 +1,7 @@
 ﻿namespace BankMore.ContaCorrente.Application.Saldo
 {
     public sealed record SaldoDto(
-        string NumeroConta,
+        int NumeroConta,
         string NomeTitular,
         DateTime DataHora,
         decimal Valor);

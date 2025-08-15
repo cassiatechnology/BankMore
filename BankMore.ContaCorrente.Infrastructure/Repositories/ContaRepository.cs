@@ -30,6 +30,8 @@ public sealed class ContaRepository : IContaRepository
         string saltBase64,
         CancellationToken ct)
     {
+        EnsureOpen();
+
         // 1) Inicia transação para atomicidade
         using var tx = _conn.BeginTransaction();
 
@@ -99,9 +101,10 @@ VALUES
 
     public async Task<ContaReadModel?> GetByCpfOrNumeroAsync(string cpfOuNumero, CancellationToken ct)
     {
-        // Aceitamos CPF (11 dígitos) ou número (int).
-        // Para simplicidade, consultamos ambos os campos com OR.
-        // Em bases grandes, seria ideal normalizar e decidir o caminho mais seletivo.
+        EnsureOpen();
+
+        // Aceita CPF (11 dígitos) ou número (int).
+        // Para simplicidade, consulta ambos os campos com OR.
         int numeroParsed = -1;
         _ = int.TryParse(cpfOuNumero, out numeroParsed);
         string cpfNormalized = OnlyDigits(cpfOuNumero);
@@ -126,6 +129,35 @@ LIMIT 1;";
         return result;
     }
 
+    public async Task<(string SenhaHash, string Salt, bool Ativo)?> GetAuthInfoByIdAsync(string contaId, CancellationToken ct)
+    {
+        EnsureOpen();
+
+        const string sql = @"
+SELECT
+    senha AS SenhaHash,
+    salt  AS Salt,
+    CASE WHEN ativo = 1 THEN 1 ELSE 0 END AS Ativo
+FROM contacorrente
+WHERE idcontacorrente = @Id
+LIMIT 1;";
+
+        var row = await _conn.QuerySingleOrDefaultAsync<AuthRow>(
+            new CommandDefinition(sql, new { Id = contaId }, cancellationToken: ct));
+
+        if (row is null) return null;
+        return (row.SenhaHash, row.Salt, row.Ativo == 1);
+    }
+
+    public async Task InativarAsync(string contaId, CancellationToken ct)
+    {
+        EnsureOpen();
+
+        const string sql = @"UPDATE contacorrente SET ativo = 0 WHERE idcontacorrente = @Id AND ativo = 1;";
+        await _conn.ExecuteAsync(
+            new CommandDefinition(sql, new { Id = contaId }, cancellationToken: ct));
+    }
+
     private static bool IsUniqueConstraint(SqliteException ex)
         => ex.SqliteErrorCode == 19 /* SQLITE_CONSTRAINT */;
 
@@ -141,4 +173,21 @@ LIMIT 1;";
         }
         return new string(arr, 0, j);
     }
+
+    private sealed class AuthRow
+    {
+        public string SenhaHash { get; set; } = default!;
+        public string Salt { get; set; } = default!;
+        public int Ativo { get; set; }
+    }
+
+    /// <summary>
+    /// Usando EnsureOpen para garantir conexão aberta antes do comando.
+    /// </summary>
+    private void EnsureOpen()
+    {
+        if (_conn.State != ConnectionState.Open)
+            _conn.Open();
+    }
+
 }

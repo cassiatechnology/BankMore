@@ -1,23 +1,65 @@
 ﻿using MediatR;
+using BankMore.ContaCorrente.Application.Auth;    // IPasswordHasher
+using BankMore.ContaCorrente.Application.Common;  // ErrorCodes
+using BankMore.ContaCorrente.Application.Contas;  // IContaRepository
 
-namespace BankMore.ContaCorrente.Application.Inativacao;
+namespace BankMore.ContaCorrente.Application.Contas;
 
-// Inativar a conta corrente logada (iremos obter o id da conta a partir do token no Controller).
-public sealed record InativarContaCommand(string ContaId, string Senha) : IRequest<Unit>;
+/// <summary>
+/// Command para inativar a conta do usuário autenticado.
+/// Recebendo o id da conta via JWT (no controller) e a senha digitada.
+/// Retornando Unit para responder 204.
+/// </summary>
+public sealed record InativarContaCommand(
+    string ContaTokenId,
+    string Senha
+) : IRequest<Unit>;
 
 public sealed class InativarContaHandler : IRequestHandler<InativarContaCommand, Unit>
 {
-    public Task<Unit> Handle(InativarContaCommand request, CancellationToken ct)
-    {
-        // Stub: apenas aceita senha "123". Próximo passo: validar hash no banco e atualizar ATIVO=0.
-        if (request.Senha != "123")
-            throw new InativarContaException("Senha inválida");
+    private readonly IContaRepository _repo;
+    private readonly IPasswordHasher _hasher;
 
-        return Task.FromResult(Unit.Value);
+    public InativarContaHandler(IContaRepository repo, IPasswordHasher hasher)
+    {
+        _repo = repo;
+        _hasher = hasher;
+    }
+
+    public async Task<Unit> Handle(InativarContaCommand request, CancellationToken ct)
+    {
+        // Validando entrada básica
+        if (string.IsNullOrWhiteSpace(request.ContaTokenId))
+            throw new InativacaoException("Conta inválida.", ErrorCodes.INVALID_ACCOUNT);
+
+        if (string.IsNullOrWhiteSpace(request.Senha))
+            throw new InativacaoException("Senha não informada.", ErrorCodes.USER_UNAUTHORIZED);
+
+        // Obtendo info de autenticação
+        var auth = await _repo.GetAuthInfoByIdAsync(request.ContaTokenId, ct);
+        if (auth is null)
+            throw new InativacaoException("Conta inexistente.", ErrorCodes.INVALID_ACCOUNT);
+
+        // Verificando senha
+        var ok = _hasher.Verify(request.Senha, auth.Value.Salt, auth.Value.SenhaHash);
+        if (!ok)
+            throw new InativacaoException("Senha incorreta.", ErrorCodes.USER_UNAUTHORIZED);
+
+        // Inativando conta (idempotente)
+        await _repo.InativarAsync(request.ContaTokenId, ct);
+
+        // Concluindo com sucesso
+        return Unit.Value;
     }
 }
 
-public sealed class InativarContaException : Exception
+/// <summary>
+/// Exceção para inativação. O controller mapeia para os devidos códigos/erros.
+/// </summary>
+public sealed class InativacaoException : Exception
 {
-    public InativarContaException(string message) : base(message) { }
+    public string ErrorType { get; }
+
+    public InativacaoException(string message, string errorType) : base(message)
+        => ErrorType = errorType;
 }

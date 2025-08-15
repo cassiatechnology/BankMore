@@ -2,13 +2,13 @@
 using BankMore.ContaCorrente.Application.Auth;
 using BankMore.ContaCorrente.Application.Cadastro;
 using BankMore.ContaCorrente.Application.Common;
-using BankMore.ContaCorrente.Application.Inativacao;
 using BankMore.ContaCorrente.Application.Movimentacao;
 using BankMore.ContaCorrente.Application.Saldo;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using BankMore.ContaCorrente.Application.Contas;   // InativarContaCommand, InativacaoException
 
 namespace BankMore.ContaCorrente.Api.Controllers;
 
@@ -66,75 +66,111 @@ public class ContaCorrenteController : ControllerBase
     }
 
     // -------- INATIVAR CONTA --------
-    public sealed record InativarContaRequest(string Senha);
+    public sealed record InativarRequest(string Senha);
 
     [HttpPost("inativar")]
-    [SwaggerOperation(Summary = "Inativar conta corrente", Description = "Requer JWT válido e senha da conta")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(object), StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> Inativar([FromBody] InativarContaRequest req, CancellationToken ct)
+    public async Task<IActionResult> Inativar([FromBody] InativarRequest req, CancellationToken ct)
     {
-        // Pegamos o "sub" do JWT como id da conta (foi assim que geramos no TokenService)
+        // Lendo id da conta a partir do JWT
         var contaId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                      ?? User.FindFirstValue("sub") // fallback
-                      ?? "1"; // stub de segurança para rodar local
+                       ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(contaId))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Token inválido.", type = ErrorCodes.INVALID_ACCOUNT });
 
         try
         {
+            // Enviando o command
             await _mediator.Send(new InativarContaCommand(contaId, req.Senha), ct);
-            return NoContent();
+            return NoContent(); // 204
         }
-        catch (InativarContaException ex)
+        catch (InativacaoException ex) when (ex.ErrorType == ErrorCodes.USER_UNAUTHORIZED)
         {
-            // Poderíamos mapear outros códigos; aqui voltamos 400 com tipo genérico
-            return BadRequest(new { message = ex.Message, type = ErrorCodes.USER_UNAUTHORIZED });
+            // Senha incorreta → 401
+            return StatusCode(StatusCodes.Status401Unauthorized, new { message = ex.Message, type = ex.ErrorType });
+        }
+        catch (InativacaoException ex)
+        {
+            // Conta inexistente ou inválida → 400
+            return BadRequest(new { message = ex.Message, type = ex.ErrorType });
         }
     }
 
+
     // -------- MOVIMENTAÇÃO --------
-    public sealed record MovimentarRequest(string IdempotencyKey, string? NumeroConta, decimal Valor, char Tipo);
+    public sealed record MovimentarRequest(
+    string IdempotencyKey,
+    char Tipo,           // 'C' ou 'D'
+    decimal Valor,
+    int? NumeroConta     // opcional; se null, usar a conta do token
+    );
 
     [HttpPost("movimentacoes")]
-    [SwaggerOperation(Summary = "Movimentar conta corrente", Description = "Crédito ou Débito; idempotente por IdempotencyKey")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(object), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Movimentar([FromBody] MovimentarRequest req, CancellationToken ct)
     {
-        var contaIdFromToken = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                               ?? User.FindFirstValue("sub")
-                               ?? "1"; // stub
+        // Lendo id da conta a partir do JWT
+        var contaTokenId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(contaTokenId))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Token inválido.", type = ErrorCodes.INVALID_ACCOUNT });
 
         try
         {
-            // Regra: se NumeroConta não informado, usar a conta do token (merge de transporte → domínio)
+            // Montando o Command com a nova assinatura
             var cmd = new MovimentarContaCommand(
+                ContaTokenId: contaTokenId,
                 IdempotencyKey: req.IdempotencyKey,
-                NumeroConta: req.NumeroConta ?? contaIdFromToken,
+                Tipo: req.Tipo,
                 Valor: req.Valor,
-                Tipo: req.Tipo
+                NumeroConta: req.NumeroConta
             );
 
             await _mediator.Send(cmd, ct);
-            return NoContent();
+            return NoContent(); // 204
         }
         catch (MovimentacaoException ex)
         {
-            return BadRequest(new { message = ex.Message, type = ErrorCodes.INVALID_VALUE });
+            // Mapeando falhas de regra para 400
+            return BadRequest(new { message = ex.Message, type = ex.ErrorType });
         }
     }
 
+
     // -------- SALDO --------
     [HttpGet("saldo")]
-    [SwaggerOperation(Summary = "Consultar saldo", Description = "Requer JWT válido")]
     [ProducesResponseType(typeof(SaldoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(object), StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> Saldo(CancellationToken ct)
+    public async Task<IActionResult> ObterSaldo(CancellationToken ct)
     {
+        // Lendo id da conta a partir do JWT
         var contaId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                      ?? User.FindFirstValue("sub")
-                      ?? "1"; // stub
-        var dto = await _mediator.Send(new ConsultarSaldoQuery(contaId), ct);
-        return Ok(dto);
+                       ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(contaId))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Token inválido.", type = ErrorCodes.INVALID_ACCOUNT });
+
+        try
+        {
+            // Enviando a query para obter o saldo
+            var dto = await _mediator.Send(new ConsultarSaldoQuery(contaId), ct);
+
+            // Retornando 200 com o DTO de saldo (DataHora já no fuso America/Sao_Paulo)
+            return Ok(dto);
+        }
+        catch (SaldoException ex)
+        {
+            // Mapeando falhas de regra para 400
+            return BadRequest(new { message = ex.Message, type = ex.ErrorType });
+        }
     }
+
 }
